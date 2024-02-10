@@ -65,6 +65,8 @@ type Config struct {
 	Browser string
 	// Device is the Device it should send on login. Defaults to "disgo".
 	Device string
+	// CloseHandlerFunc is a function to call when the gateway closes. Defaults to nil.
+	CloseHandlerFunc CloseHandlerFunc
 }
 
 // ConfigOpt is a type alias for a function that takes a Config and is used to configure your Server.
@@ -224,5 +226,12 @@ func WithBrowser(browser string) ConfigOpt {
 func WithDevice(device string) ConfigOpt {
 	return func(config *Config) {
 		config.Device = device
+	}
+}
+
+// WithCloseHandlerFunc sets a close function that is called when the Gateway is closed.
+func WithCloseHandlerFunc(closeHandlerFunc CloseHandlerFunc) ConfigOpt {
+	return func(config *Config) {
+		config.CloseHandlerFunc = closeHandlerFunc
 	}
 }
