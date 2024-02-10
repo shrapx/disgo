@@ -27,6 +27,11 @@ func New(token string, eventHandlerFunc EventHandlerFunc, closeHandlerFunc Close
 	config.Apply(opts)
 	config.Logger = config.Logger.With(slog.String("name", "gateway"), slog.Int("shard_id", config.ShardID), slog.Int("shard_count", config.ShardCount))
 
+	// closeHandlerFunc prefer config over parameter
+	if config.CloseHandlerFunc != nil {
+		closeHandlerFunc = config.CloseHandlerFunc
+	}
+
 	return &gatewayImpl{
 		config:           *config,
 		eventHandlerFunc: eventHandlerFunc,
