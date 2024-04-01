@@ -62,6 +62,7 @@ func (a Application) CreatedAt() time.Time {
 
 type ApplicationUpdate struct {
 	CustomInstallURL               *string              `json:"custom_install_url,omitempty"`
+	Name                           *string              `json:"name,omitempty"`
 	Description                    *string              `json:"description,omitempty"`
 	RoleConnectionsVerificationURL *string              `json:"role_connections_verification_url,omitempty"`
 	InstallParams                  *InstallParams       `json:"install_params,omitempty"`
