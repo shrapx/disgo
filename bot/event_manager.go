@@ -122,7 +122,7 @@ type eventManagerImpl struct {
 
 	client             Client
 	logger             *slog.Logger
-	eventListenerMu    sync.Mutex
+	eventListenerMu    sync.RWMutex
 	eventListeners     []EventListener
 	asyncEventsEnabled bool
 	gatewayHandlers    map[gateway.EventType]GatewayEventHandler
@@ -152,19 +152,21 @@ func (e *eventManagerImpl) DispatchEvent(event Event) {
 			return
 		}
 	}()
-	e.eventListenerMu.Lock()
-	defer e.eventListenerMu.Unlock()
+	e.eventListenerMu.RLock()
+	defer e.eventListenerMu.RUnlock()
+
 	for i := range e.eventListeners {
 		if e.asyncEventsEnabled {
-			go func(i int) {
+			listener := e.eventListeners[i]
+			go func() {
 				defer func() {
 					if r := recover(); r != nil {
 						e.logger.Error("recovered from panic in event listener", slog.Any("arg", r), slog.String("stack", string(debug.Stack())))
 						return
 					}
 				}()
-				e.eventListeners[i].OnEvent(event)
-			}(i)
+				listener.OnEvent(event)
+			}()
 			continue
 		}
 		e.eventListeners[i].OnEvent(event)
