@@ -33,7 +33,7 @@ func gatewayHandlerReady(client bot.Client, sequenceNumber int, shardID int, eve
 	})
 }
 
-func gatewayHandlerResumed(client bot.Client, sequenceNumber int, shardID int, _ gateway.EventData) {
+func gatewayHandlerResumed(client bot.Client, sequenceNumber int, shardID int, _ gateway.EventResumed) {
 	client.EventManager().DispatchEvent(&events.Resumed{
 		GenericEvent: events.NewGenericEvent(client, sequenceNumber, shardID),
 	})
