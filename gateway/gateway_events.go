@@ -43,6 +43,14 @@ type EventReady struct {
 func (EventReady) messageData() {}
 func (EventReady) eventData()   {}
 
+// EventResumed is the event sent by discord when you successfully resume.
+// Its payload carries nothing disgo uses, but it must not decode to a nil EventData:
+// a GatewayEventHandler only runs for a value of its type.
+type EventResumed struct{}
+
+func (EventResumed) messageData() {}
+func (EventResumed) eventData()   {}
+
 type EventApplicationCommandPermissionsUpdate struct {
 	discord.ApplicationCommandPermissions
 }
