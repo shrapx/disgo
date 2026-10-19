@@ -49,6 +49,12 @@ type Config struct {
 	LastSequenceReceived *int
 	// AutoReconnect is whether the Gateway should automatically reconnect or call the CloseHandlerFunc. Defaults to true.
 	AutoReconnect bool
+	// SingleAttempt is whether the Gateway makes one connection attempt per Open and never reconnects by itself.
+	// Open dials once (no retries); opcode 7 (Reconnect), opcode 9 (Invalid Session) and a failed heartbeat send
+	// close the connection and call the CloseHandlerFunc (with ErrReconnectRequested, ErrInvalidSession,
+	// ErrInvalidSessionResumable or ErrHeartbeatFailed) instead of reconnecting, whatever AutoReconnect is.
+	// The caller decides whether and when to connect again. Defaults to false.
+	SingleAttempt bool
 	// EnableRawEvents is whether the Gateway should emit EventRaw. Defaults to false.
 	EnableRawEvents bool
 	// EnableResumeURL is whether the Gateway should enable the resumeURL. Defaults to true.
@@ -163,6 +169,15 @@ func WithSequence(sequence int) ConfigOpt {
 func WithAutoReconnect(autoReconnect bool) ConfigOpt {
 	return func(config *Config) {
 		config.AutoReconnect = autoReconnect
+	}
+}
+
+// WithSingleAttempt sets whether the Gateway makes one connection attempt per Open and never reconnects by itself,
+// see Config.SingleAttempt. Nothing in the Gateway then opens a second connection: a caller that counts its
+// connects (Discord resets a token after 1000 identifies a day) counts every one of them.
+func WithSingleAttempt(singleAttempt bool) ConfigOpt {
+	return func(config *Config) {
+		config.SingleAttempt = singleAttempt
 	}
 }
 

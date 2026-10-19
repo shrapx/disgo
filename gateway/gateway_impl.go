@@ -99,7 +99,22 @@ func (g *gatewayImpl) Open(ctx context.Context) error {
 	defer cancel()
 	stop := context.AfterFunc(run, cancel)
 	defer stop()
+	if g.config.SingleAttempt {
+		return g.openOnce(ctx, run)
+	}
 	return g.reconnectTry(ctx, run, 0)
+}
+
+// openOnce makes the one attempt of a SingleAttempt gateway: no delay, no retry
+func (g *gatewayImpl) openOnce(ctx context.Context, run context.Context) error {
+	if err := runErr(ctx, run); err != nil {
+		return err
+	}
+	err := g.open(ctx, run)
+	if err != nil && !errors.Is(err, discord.ErrGatewayAlreadyConnected) {
+		g.setStatus(nil, StatusDisconnected)
+	}
+	return err
 }
 
 // startRun returns the context of the current run, or starts a new run if there is none or the
@@ -347,6 +362,19 @@ func (g *gatewayImpl) reconnect(run context.Context) {
 	}
 }
 
+// endedByGateway is what follows when the gateway itself ended the connection (opcode 7, opcode 9, a
+// failed heartbeat send): it reconnects, whatever AutoReconnect is. With SingleAttempt it opens
+// nothing and calls the close handler with err instead.
+func (g *gatewayImpl) endedByGateway(run context.Context, err error) {
+	if !g.config.SingleAttempt {
+		go g.reconnect(run)
+		return
+	}
+	if g.closeHandlerFunc != nil {
+		go g.closeHandlerFunc(g, err)
+	}
+}
+
 // startHeartbeat starts the heartbeat of conn, stopping the one before; nothing if conn is closed
 func (g *gatewayImpl) startHeartbeat(conn *websocket.Conn, run context.Context, interval time.Duration) {
 	g.connMu.Lock()
@@ -399,7 +427,7 @@ func (g *gatewayImpl) sendHeartbeat(conn *websocket.Conn, run context.Context) {
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer closeCancel()
 		if g.closeConn(closeCtx, conn, websocket.CloseServiceRestart, "heartbeat timeout") {
-			go g.reconnect(run)
+			g.endedByGateway(run, fmt.Errorf("%w: %w", ErrHeartbeatFailed, err))
 		}
 		return
 	}
@@ -501,7 +529,7 @@ loop:
 				// the user closed it meanwhile
 				return
 			}
-			if g.config.AutoReconnect && reconnect {
+			if g.config.AutoReconnect && !g.config.SingleAttempt && reconnect {
 				go g.reconnect(run)
 			} else if g.closeHandlerFunc != nil {
 				go g.closeHandlerFunc(g, err)
@@ -581,7 +609,7 @@ loop:
 			closed := g.closeConn(ctx, conn, websocket.CloseServiceRestart, "received reconnect")
 			cancel()
 			if closed {
-				go g.reconnect(run)
+				g.endedByGateway(run, ErrReconnectRequested)
 			}
 			break loop
 
@@ -589,8 +617,10 @@ loop:
 			canResume := message.D.(MessageDataInvalidSession)
 
 			code := websocket.CloseNormalClosure
+			endErr := ErrInvalidSession
 			if canResume {
 				code = websocket.CloseServiceRestart
+				endErr = ErrInvalidSessionResumable
 			} else {
 				// clear resume info
 				g.clearSession()
@@ -600,7 +630,7 @@ loop:
 			closed := g.closeConn(ctx, conn, code, "invalid session")
 			cancel()
 			if closed {
-				go g.reconnect(run)
+				g.endedByGateway(run, endErr)
 			}
 			break loop
 

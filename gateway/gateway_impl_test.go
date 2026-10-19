@@ -26,6 +26,11 @@ type fakeGateway struct {
 	heartbeatMs int
 	events      bool // send a dispatch every millisecond
 
+	// set before newGateway; the gateway is then built with these
+	noAck         bool // do not answer heartbeats
+	singleAttempt bool // WithSingleAttempt(true)
+	dialer        *websocket.Dialer
+
 	mu         sync.Mutex
 	refuse     bool
 	attempts   int
@@ -113,7 +118,9 @@ func (f *fakeGateway) serve(c *fakeConn) {
 			f.mu.Lock()
 			f.heartbeats++
 			f.mu.Unlock()
-			_ = c.write(map[string]any{"op": 11})
+			if !f.noAck {
+				_ = c.write(map[string]any{"op": 11})
+			}
 		case 2:
 			f.mu.Lock()
 			f.identifies++
@@ -154,6 +161,11 @@ func (f *fakeGateway) closeCurrent(code int, text string) {
 	_ = c.conn.Close()
 }
 
+// dropCurrent ends the open connection without a close frame
+func (f *fakeGateway) dropCurrent() {
+	_ = f.take().conn.Close()
+}
+
 // sendOp sends opcode op with data d on the open connection, which the gateway is then expected to close
 func (f *fakeGateway) sendOp(op Opcode, d any) {
 	require.NoError(f.t, f.take().write(map[string]any{"op": op, "d": d}))
@@ -172,6 +184,19 @@ func (f *fakeGateway) counts() (attempts, accepted, identifies, resumes int) {
 }
 
 func (f *fakeGateway) newGateway(autoReconnect bool, closeHandler CloseHandlerFunc, ready chan<- struct{}) Gateway {
+	opts := []ConfigOpt{
+		WithURL(f.url),
+		WithCompress(false),
+		WithEnableResumeURL(true),
+		WithAutoReconnect(autoReconnect),
+		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+	}
+	if f.singleAttempt {
+		opts = append(opts, WithSingleAttempt(true))
+	}
+	if f.dialer != nil {
+		opts = append(opts, WithDialer(f.dialer))
+	}
 	return New("token",
 		func(eventType EventType, _ int, _ int, _ EventData) {
 			if eventType == EventTypeReady || eventType == EventTypeResumed {
@@ -182,11 +207,7 @@ func (f *fakeGateway) newGateway(autoReconnect bool, closeHandler CloseHandlerFu
 			}
 		},
 		closeHandler,
-		WithURL(f.url),
-		WithCompress(false),
-		WithEnableResumeURL(true),
-		WithAutoReconnect(autoReconnect),
-		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		opts...,
 	)
 }
 
