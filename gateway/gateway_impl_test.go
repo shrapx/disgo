@@ -30,6 +30,7 @@ type fakeGateway struct {
 	noAck         bool // do not answer heartbeats
 	singleAttempt bool // WithSingleAttempt(true)
 	dialer        *websocket.Dialer
+	gate          IdentifyGate // WithIdentifyGate
 
 	mu         sync.Mutex
 	refuse     bool
@@ -193,6 +194,9 @@ func (f *fakeGateway) newGateway(autoReconnect bool, closeHandler CloseHandlerFu
 	}
 	if f.singleAttempt {
 		opts = append(opts, WithSingleAttempt(true))
+	}
+	if f.gate != nil {
+		opts = append(opts, WithIdentifyGate(f.gate))
 	}
 	if f.dialer != nil {
 		opts = append(opts, WithDialer(f.dialer))

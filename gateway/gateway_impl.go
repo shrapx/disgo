@@ -436,8 +436,52 @@ func (g *gatewayImpl) sendHeartbeat(conn *websocket.Conn, run context.Context) {
 	g.stateMu.Unlock()
 }
 
-func (g *gatewayImpl) identify(conn *websocket.Conn) {
+// IdentifyGate decides whether an Identify may be sent now. It is the caller's, per token: the Gateway holds
+// no count itself.
+type IdentifyGate interface {
+	// TakeIdentify is called right before an Identify is sent. When ok is true the Identify counts against the
+	// gate and is sent now. When it is false nothing is counted and the Identify is not sent; the Gateway asks
+	// again after wait (a hint: the time until the oldest counted Identify ages out), or never if the run ends.
+	TakeIdentify() (ok bool, wait time.Duration)
+}
+
+// takeIdentify asks the IdentifyGate until it lets the Identify go. It returns false when the run ended or the
+// connection was replaced meanwhile (a Close, or Discord closing the idle connection): then nothing is sent
+// and nothing was counted. The listen goroutine waits here, so the connection is not read meanwhile.
+func (g *gatewayImpl) takeIdentify(conn *websocket.Conn, run context.Context) bool {
+	if g.config.IdentifyGate == nil {
+		return true
+	}
+	for {
+		ok, wait := g.config.IdentifyGate.TakeIdentify()
+		if ok {
+			return true
+		}
+		if wait < time.Second {
+			wait = time.Second
+		}
+		g.config.Logger.Warn("Identify held by the gate", slog.Duration("wait", wait))
+		timer := time.NewTimer(wait)
+		select {
+		case <-run.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+		g.connMu.Lock()
+		same := g.conn == conn
+		g.connMu.Unlock()
+		if !same {
+			return false
+		}
+	}
+}
+
+func (g *gatewayImpl) identify(conn *websocket.Conn, run context.Context) {
 	g.setStatus(conn, StatusIdentifying)
+	if !g.takeIdentify(conn, run) {
+		return
+	}
 	g.config.Logger.Debug("sending Identify command")
 
 	identify := MessageDataIdentify{
@@ -559,7 +603,7 @@ loop:
 			g.startHeartbeat(conn, run, interval)
 
 			if sessionID == nil {
-				g.identify(conn)
+				g.identify(conn, run)
 			} else {
 				g.resume(conn, *sessionID, *seq)
 			}

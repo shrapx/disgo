@@ -55,6 +55,10 @@ type Config struct {
 	// ErrInvalidSessionResumable or ErrHeartbeatFailed) instead of reconnecting, whatever AutoReconnect is.
 	// The caller decides whether and when to connect again. Defaults to false.
 	SingleAttempt bool
+	// IdentifyGate is asked before every Identify the Gateway sends (a fresh session, whoever starts it: Open,
+	// opcode 7 or 9 reconnect, a failed heartbeat, a reconnect after a close). A Resume is not asked. Defaults to nil
+	// (no gate, every Identify is sent at once).
+	IdentifyGate IdentifyGate
 	// EnableRawEvents is whether the Gateway should emit EventRaw. Defaults to false.
 	EnableRawEvents bool
 	// EnableResumeURL is whether the Gateway should enable the resumeURL. Defaults to true.
@@ -178,6 +182,14 @@ func WithAutoReconnect(autoReconnect bool) ConfigOpt {
 func WithSingleAttempt(singleAttempt bool) ConfigOpt {
 	return func(config *Config) {
 		config.SingleAttempt = singleAttempt
+	}
+}
+
+// WithIdentifyGate sets the IdentifyGate of the Gateway, see Config.IdentifyGate. Discord counts every Identify
+// per token (1000 in 24 hours, then it resets the token); a gate lets the caller keep that count under its limit.
+func WithIdentifyGate(gate IdentifyGate) ConfigOpt {
+	return func(config *Config) {
+		config.IdentifyGate = gate
 	}
 }
 
